@@ -1,59 +1,270 @@
 "use client";
-import { useMemo, useState } from "react";
+
+import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { calculatePrice, endTime } from "@/lib/pricing";
+
+const hours = Array.from({ length: 19 }, (_, i) => i + 6);
+
+function timeLabel(hour: number) {
+  if (hour === 24) return "12:00 AM";
+  const h = hour % 12 || 12;
+  return `${h}:00 ${hour < 12 ? "AM" : "PM"}`;
+}
+
+function timeValue(hour: number) {
+  return `${String(hour % 24).padStart(2, "0")}:00`;
+}
+
+function rate(hour: number) {
+  return hour >= 17 ? 300 : 250;
+}
 
 export default function Home() {
-  const today = new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
-  const [date,setDate]=useState(today), [court,setCourt]=useState("Court A"), [start,setStart]=useState("09:00"),
-    [duration,setDuration]=useState("1"), [name,setName]=useState(""), [phone,setPhone]=useState(""),
-    [email,setEmail]=useState(""), [notes,setNotes]=useState(""), [proof,setProof]=useState<File|null>(null),
-    [busy,setBusy]=useState(false), [message,setMessage]=useState(""), [error,setError]=useState("");
-  const total=useMemo(()=>calculatePrice(start,Number(duration)),[start,duration]);
-  const end=endTime(start,Number(duration));
-  const [qrUrl,setQrUrl]=useState("");
-  async function submit(e:React.FormEvent) {
-    e.preventDefault(); setError(""); setMessage("");
-    if(!proof){setError("Please upload your payment screenshot.");return;}
-    if(!name.trim()||!phone.trim()){setError("Please enter your name and mobile number.");return;}
-    setBusy(true);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [court, setCourt] = useState("Court A");
+  const [date, setDate] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const startHour = Number(start);
+  const endHour = Number(end);
+
+  const total =
+    start && end && endHour > startHour
+      ? Array.from(
+          { length: endHour - startHour },
+          (_, i) => rate(startHour + i)
+        ).reduce((a, b) => a + b, 0)
+      : 0;
+
+  async function submitBooking(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage("");
+
+    if (!start || !end || endHour <= startHour) {
+      setMessage("Please select a valid booking time.");
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      const ext=proof.name.split(".").pop() || "jpg";
-      const path=`${crypto.randomUUID()}.${ext}`;
-      const {error:upErr}=await supabase.storage.from("payment-proofs").upload(path,proof,{upsert:false,contentType:proof.type});
-      if(upErr) throw upErr;
-      const {data,error:dbErr}=await supabase.from("bookings").insert({
-        customer_name:name.trim(), phone:phone.trim(), email:email.trim()||null, court, booking_date:date,
-        start_time:start, end_time:end, duration_hours:Number(duration), total_amount:total,
-        payment_method:"QR_TRANSFER", payment_status:"PENDING_VERIFICATION", booking_status:"PENDING",
-        payment_proof_path:path, notes:notes.trim()||null
-      }).select("reference").single();
-      if(dbErr) throw dbErr;
-      setMessage(`Booking request saved! Reference: ${data.reference}. Your payment is pending owner verification.`);
-      setName("");setPhone("");setEmail("");setNotes("");setProof(null);
-    } catch(err:any) { setError(err?.message || "Could not submit booking. Please try again."); }
-    finally {setBusy(false);}
+      const { data: existing, error: checkError } = await supabase
+        .from("bookings")
+        .select("start_time,end_time")
+        .eq("court", court)
+        .eq("booking_date", date)
+        .neq("booking_status", "CANCELLED");
+
+      if (checkError) throw checkError;
+
+      const overlaps = (existing || []).some((booking) => {
+        const oldStart = Number(booking.start_time.slice(0, 2));
+        const oldEnd = Number(booking.end_time.slice(0, 2));
+        return startHour < oldEnd && endHour > oldStart;
+      });
+
+      if (overlaps) {
+        setMessage("Sorry, this time slot is already booked. Please choose another.");
+        setLoading(false);
+        return;
+      }
+
+      const reference =
+        "NZ-" + Date.now().toString().slice(-8);
+
+      const { error } = await supabase.from("bookings").insert({
+        reference,
+        customer_name: name,
+        phone,
+        court,
+        booking_date: date,
+        start_time: timeValue(startHour),
+        end_time: timeValue(endHour),
+        total_amount: total,
+        booking_status: "PENDING",
+        payment_status: "PENDING_VERIFICATION",
+      });
+
+      if (error) throw error;
+
+      setMessage(
+        `Booking request submitted! Reference: ${reference}. Total: ₱${total}. Please wait for confirmation.`
+      );
+      setName("");
+      setPhone("");
+      setCourt("Court A");
+      setDate("");
+      setStart("");
+      setEnd("");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
-  return <main className="wrap">
-    <nav className="nav"><div className="logo"><span className="net">Net</span><span className="zone">Zone</span> 🏓</div><a className="pill" href="#book">Book a Court</a></nav>
-    <section className="hero"><div><div className="tag">PICKLEBALL COURT RENTAL · GENERAL SANTOS CITY</div><h1>Your next pickleball game starts here.</h1><p>Grab your friends, pick a time, and get on court at NetZone.</p><a className="pill" href="#book">Book a Court →</a></div><div className="card"><h2>Play at NetZone</h2><p>📍 Barangay Apopong, Diversion Road<br/>(Beside Cabin Brewery), General Santos City</p><p>🕕 Open daily · 6:00 AM–12:00 AM</p><div className="rates"><div className="rate">6 AM – 5 PM<strong>₱250<span style={{fontSize:14}}>/hr</span></strong></div><div className="rate">5 PM – 12 AM<strong>₱300<span style={{fontSize:14}}>/hr</span></strong></div></div></div></section>
-    <section className="section grid"><div className="card"><h2>How to book</h2><p>1. Choose a court, date, and time.</p><p>2. Enter your details and upload your payment proof.</p><p>3. Wait for the owner to verify your payment and booking.</p></div><div className="card"><h2>Payment</h2><p>Pay through the official GCash or bank-transfer QR code. Your booking stays pending until the owner verifies the payment.</p><p className="note">Owner: add your official QR code in the app before accepting real bookings.</p></div></section>
-    <section className="section card" id="book"><h2>Book a court</h2><p className="note">Bookings are requests until confirmed by the owner. Availability and overlap protection must be enabled in the database before launch.</p>
-      <form onSubmit={submit}><div className="formgrid">
-        <div className="field"><label>Booking date</label><input type="date" min={today} value={date} onChange={e=>setDate(e.target.value)} required/></div>
-        <div className="field"><label>Court</label><select value={court} onChange={e=>setCourt(e.target.value)}><option>Court A</option><option>Court B</option></select></div>
-        <div className="field"><label>Start time</label><select value={start} onChange={e=>setStart(e.target.value)}>{Array.from({length:18},(_,i)=>6+i).map(h=><option key={h} value={`${String(h).padStart(2,"0")}:00`}>{h===12?"12:00 PM":h<12?`${h}:00 AM`:`${h-12}:00 PM`}</option>)}</select></div>
-        <div className="field"><label>Duration</label><select value={duration} onChange={e=>setDuration(e.target.value)}>{[1,2,3,4].filter(d=>Number(start.slice(0,2))+d<=24).map(d=><option key={d} value={d}>{d} hour{d>1?"s":""}</option>)}</select></div>
-        <div className="field"><label>Full name *</label><input value={name} onChange={e=>setName(e.target.value)} required placeholder="Your full name"/></div>
-        <div className="field"><label>Mobile number *</label><input value={phone} onChange={e=>setPhone(e.target.value)} required placeholder="09XX XXX XXXX"/></div>
-        <div className="field"><label>Email (optional)</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div>
-        <div className="field"><label>Payment screenshot *</label><input type="file" accept="image/*,.pdf" onChange={e=>setProof(e.target.files?.[0]||null)} required/></div>
-        <div className="field full"><label>Notes (optional)</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything we should know?"/></div>
-      </div><div className="notice"><strong>Estimated total: ₱{total.toLocaleString("en-PH")}</strong><br/><span className="note">{start}–{end} · {duration} hour(s) · {court}</span></div>
-      <div className="field" style={{marginTop:16}}><label>Payment QR code</label>{qrUrl?<img src={qrUrl} alt="NetZone payment QR" style={{maxWidth:220,width:"100%"}}/>:<p className="note">Payment QR code has not been configured yet. Add your official QR code before publishing.</p>}</div>
-      <button className="submit" disabled={busy} type="submit">{busy?"Submitting…":"Submit Booking Request"}</button>
-      {message&&<div className="notice">{message}</div>}{error&&<div className="error">{error}</div>}
-      </form></section>
-    <footer>© {new Date().getFullYear()} NetZone · Pickleball, good games, good company.</footer>
-  </main>;
+
+  return (
+    <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, color: "#172554" }}>
+      <header style={{ textAlign: "center", padding: "24px 0" }}>
+        <h1 style={{ fontSize: 42, margin: 0 }}>
+          <span style={{ color: "#ec4899" }}>Net</span>
+          <span style={{ color: "#2563eb" }}>Zone</span>
+        </h1>
+        <p>Book your court. Play your game.</p>
+        <p style={{ fontSize: 14 }}>
+          Barangay Apopong Diversion Road, General Santos City
+        </p>
+      </header>
+
+      <section style={{ background: "#f8fafc", borderRadius: 16, padding: 24 }}>
+        <h2>Book a Court</h2>
+        <p>Choose your court, date, and playing time.</p>
+
+        <form onSubmit={submitBooking}>
+          <label>Court</label>
+          <select
+            value={court}
+            onChange={(e) => setCourt(e.target.value)}
+            style={fieldStyle}
+          >
+            <option>Court A</option>
+            <option>Court B</option>
+          </select>
+
+          <label>Booking Date</label>
+          <input
+            type="date"
+            value={date}
+            min={new Date().toLocaleDateString("en-CA")}
+            onChange={(e) => setDate(e.target.value)}
+            required
+            style={fieldStyle}
+          />
+
+          <label>Start Time</label>
+          <select
+            value={start}
+            onChange={(e) => {
+              setStart(e.target.value);
+              setEnd("");
+            }}
+            required
+            style={fieldStyle}
+          >
+            <option value="">Select start time</option>
+            {hours.slice(0, 18).map((hour) => (
+              <option key={hour} value={hour}>
+                {timeLabel(hour)}
+              </option>
+            ))}
+          </select>
+
+          <label>End Time</label>
+          <select
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            required
+            disabled={!start}
+            style={fieldStyle}
+          >
+            <option value="">Select end time</option>
+            {hours
+              .filter((hour) => hour > startHour)
+              .concat(startHour < 24 ? [24] : [])
+              .map((hour) => (
+                <option key={hour} value={hour}>
+                  {timeLabel(hour)}
+                </option>
+              ))}
+          </select>
+
+          <label>Full Name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            placeholder="Enter your full name"
+            style={fieldStyle}
+          />
+
+          <label>Contact Number</label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            required
+            placeholder="09XXXXXXXXX"
+            style={fieldStyle}
+          />
+
+          <div
+            style={{
+              background: "white",
+              padding: 16,
+              borderRadius: 12,
+              margin: "20px 0",
+            }}
+          >
+            <p>6:00 AM – 5:00 PM: ₱250/hour</p>
+            <p>5:00 PM – 12:00 AM: ₱300/hour</p>
+            <h2>Total: ₱{total.toLocaleString()}</h2>
+          </div>
+
+          <button type="submit" disabled={loading} style={buttonStyle}>
+            {loading ? "Submitting..." : "Submit Booking"}
+          </button>
+        </form>
+
+        {message && (
+          <p
+            style={{
+              background: "white",
+              padding: 16,
+              borderRadius: 8,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {message}
+          </p>
+        )}
+      </section>
+
+      <footer style={{ textAlign: "center", padding: 24 }}>
+        <a href="/admin" style={{ color: "#64748b" }}>
+          Admin Login
+        </a>
+      </footer>
+    </main>
+  );
 }
+
+const fieldStyle = {
+  display: "block",
+  width: "100%",
+  padding: 12,
+  margin: "8px 0 18px",
+  border: "1px solid #cbd5e1",
+  borderRadius: 8,
+  background: "white",
+  boxSizing: "border-box" as const,
+};
+
+const buttonStyle = {
+  width: "100%",
+  padding: 16,
+  background: "#2563eb",
+  color: "white",
+  border: "none",
+  borderRadius: 10,
+  fontSize: 16,
+  fontWeight: "bold" as const,
+  cursor: "pointer",
+};
