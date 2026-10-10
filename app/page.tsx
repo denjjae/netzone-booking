@@ -44,6 +44,11 @@ export default function Home() {
     e.preventDefault();
     setMessage("");
 
+    if (!date) {
+      setMessage("Please select a booking date.");
+      return;
+    }
+
     if (!start || !end || endHour <= startHour) {
       setMessage("Please select a valid booking time.");
       return;
@@ -64,6 +69,7 @@ export default function Home() {
       const overlaps = (existing || []).some((booking) => {
         const oldStart = Number(booking.start_time.slice(0, 2));
         const oldEnd = Number(booking.end_time.slice(0, 2));
+
         return startHour < oldEnd && endHour > oldStart;
       });
 
@@ -85,6 +91,7 @@ export default function Home() {
         booking_date: date,
         start_time: timeValue(startHour),
         end_time: timeValue(endHour),
+        duration_hours: endHour - startHour,
         total_amount: total,
         booking_status: "PENDING",
         payment_status: "PENDING_VERIFICATION",
@@ -118,24 +125,40 @@ export default function Home() {
   }
 
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: 24, color: "#172554" }}>
+    <main
+      style={{
+        maxWidth: 760,
+        margin: "0 auto",
+        padding: 24,
+        color: "#172554",
+      }}
+    >
       <header style={{ textAlign: "center", padding: "24px 0" }}>
         <h1 style={{ fontSize: 42, margin: 0 }}>
           <span style={{ color: "#ec4899" }}>Net</span>
           <span style={{ color: "#2563eb" }}>Zone</span>
         </h1>
+
         <p>Book your court. Play your game.</p>
+
         <p style={{ fontSize: 14 }}>
           Barangay Apopong Diversion Road, General Santos City
         </p>
       </header>
 
-      <section style={{ background: "#f8fafc", borderRadius: 16, padding: 24 }}>
+      <section
+        style={{
+          background: "#f8fafc",
+          borderRadius: 16,
+          padding: 24,
+        }}
+      >
         <h2>Book a Court</h2>
         <p>Choose your court, date, and playing time.</p>
 
         <form onSubmit={submitBooking}>
           <label>Court</label>
+
           <select
             value={court}
             onChange={(e) => setCourt(e.target.value)}
@@ -146,6 +169,7 @@ export default function Home() {
           </select>
 
           <label>Booking Date</label>
+
           <input
             type="date"
             value={date}
@@ -156,6 +180,7 @@ export default function Home() {
           />
 
           <label>Start Time</label>
+
           <select
             value={start}
             onChange={(e) => {
@@ -166,6 +191,7 @@ export default function Home() {
             style={fieldStyle}
           >
             <option value="">Select start time</option>
+
             {hours.slice(0, 18).map((hour) => (
               <option key={hour} value={hour}>
                 {timeLabel(hour)}
@@ -174,6 +200,7 @@ export default function Home() {
           </select>
 
           <label>End Time</label>
+
           <select
             value={end}
             onChange={(e) => setEnd(e.target.value)}
@@ -182,6 +209,7 @@ export default function Home() {
             style={fieldStyle}
           >
             <option value="">Select end time</option>
+
             {hours
               .filter((hour) => hour > startHour)
               .concat(startHour < 24 ? [24] : [])
@@ -193,6 +221,7 @@ export default function Home() {
           </select>
 
           <label>Full Name</label>
+
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -202,6 +231,7 @@ export default function Home() {
           />
 
           <label>Contact Number</label>
+
           <input
             type="tel"
             value={phone}
@@ -224,7 +254,11 @@ export default function Home() {
             <h2>Total: ₱{total.toLocaleString()}</h2>
           </div>
 
-          <button type="submit" disabled={loading} style={buttonStyle}>
+          <button
+            type="submit"
+            disabled={loading}
+            style={buttonStyle}
+          >
             {loading ? "Submitting..." : "Submit Booking"}
           </button>
         </form>
