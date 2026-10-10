@@ -102,16 +102,9 @@ export default function Home() {
 
       if (error) throw error;
 
-      setMessage(
-        `Booking request submitted! Reference: ${reference}. Total: ₱${total}. Please wait for confirmation.`
-      );
-
-      setName("");
-      setPhone("");
-      setCourt("Court A");
-      setDate("");
-      setStart("");
-      setEnd("");
+      window.location.href = `/payment?reference=${encodeURIComponent(
+        reference
+      )}`;
     } catch (error: any) {
       console.error("BOOKING ERROR:", error);
 
@@ -262,7 +255,7 @@ export default function Home() {
             disabled={loading}
             style={buttonStyle}
           >
-            {loading ? "Submitting..." : "Submit Booking"}
+            {loading ? "Submitting..." : "Continue to Payment"}
           </button>
         </form>
 
