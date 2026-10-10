@@ -68,13 +68,14 @@ export default function Home() {
       });
 
       if (overlaps) {
-        setMessage("Sorry, this time slot is already booked. Please choose another.");
+        setMessage(
+          "Sorry, this time slot is already booked. Please choose another."
+        );
         setLoading(false);
         return;
       }
 
-      const reference =
-        "NZ-" + Date.now().toString().slice(-8);
+      const reference = "NZ-" + Date.now().toString().slice(-8);
 
       const { error } = await supabase.from("bookings").insert({
         reference,
@@ -94,17 +95,22 @@ export default function Home() {
       setMessage(
         `Booking request submitted! Reference: ${reference}. Total: ₱${total}. Please wait for confirmation.`
       );
+
       setName("");
       setPhone("");
       setCourt("Court A");
       setDate("");
       setStart("");
       setEnd("");
-    } catch (error) {
+    } catch (error: any) {
+      console.error("BOOKING ERROR:", error);
+
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong. Please try again."
+        error?.message ||
+          error?.details ||
+          error?.hint ||
+          JSON.stringify(error) ||
+          "Something went wrong. Please try again."
       );
     } finally {
       setLoading(false);
